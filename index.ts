@@ -36,7 +36,9 @@ function postFormatter(update): string {
   console.log("Running postFormatter...");
   let verbose_length = update.content.length + update.pubDate.length
   let condensed_length = update.contentSnippet.length + update.pubDate.length
+
   // bluesky allows posts 300 characters or less
+  // TO-DO: embed service link into the post as a link card
   if ((verbose_length + newlinesInPost) <= postCharLimit) {
     return `${update.content}\n\n${update.pubDate}\n`
   } else if ((condensed_length + newlinesInPost) <= postCharLimit) {
@@ -55,7 +57,8 @@ async function rssParse(linkToParse: string) {
 // One way -- when pulling in the latest headline, create it as an object and compare to objects in the list
 function rssUpdate() {
   console.log("Running rssUpdate...");
-  
+
+  // TO-DO: What if the RSS query fails?
   (async () => {
     let result = await rssParse(bartRSSFeed);
     let post = postFormatter(result.items[0]);
