@@ -3,8 +3,10 @@ const { BskyAgent } = bsky;
 import * as dotenv from 'dotenv';
 import { CronJob } from 'cron';
 import * as process from 'process';
+import Parser from 'rss-parser';
 dotenv.config();
 const port = process.env.PORT || "8080";
+let parser = new Parser();
 // Create a Bluesky Agent 
 const agent = new BskyAgent({
     service: 'https://bsky.social',
@@ -13,59 +15,54 @@ await agent.login({
     identifier: process.env.BLUESKY_USERNAME,
     password: process.env.BLUESKY_PASSWORD,
 });
-// Define emoji arrays
-const MOON_EMOJI = ['🌕', '🌖', '🌗', '🌘', '🌒', '🌓', '🌙', '🌜', '🌝', '🌚'];
-const SUN_EMOJI = ['🌞', '🌅', '🌄', '🌇', '⛅️', '🌤️', '🌥️', '🌦️'];
-const STORM_EMOJI = ['🌧️', '🌨️', '⛈️', '🌩️', '🌪️'];
-const CLEAR_EMOJI = ['☁️', ' '];
-const BIRD_EMOJI = ['🦅', '🕊️', '🦆', '🦜', '🐥', '🦉'];
-const FLORA_EMOJI = ['🌱', '🌷', '🌻', '🍀', '🌹', '🌴', '🌱', '🌵', '🌳', '🍄', '🌾', '🎋'];
-// Function to get random emoji from an array
-function getRandomEmoji(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
-}
-// Function to print random emojis in random positions
-function printRandomEmojis() {
-    console.log("Running printRandomEmojis...");
-    const moonOrSun = Math.random() < 0.5 ? MOON_EMOJI : SUN_EMOJI;
-    const rainingOrClear = Math.random() < 0.5 ? STORM_EMOJI : CLEAR_EMOJI;
-    const emojiArrays = [moonOrSun, rainingOrClear, BIRD_EMOJI];
-    const emojis = emojiArrays.map((arr) => getRandomEmoji(arr));
-    // Add two random flora emojis to the last line
-    const flora1 = getRandomEmoji(FLORA_EMOJI);
-    let flora2 = getRandomEmoji(FLORA_EMOJI);
-    // Ensure the flora emojis are distinct
-    while (flora1 === flora2) {
-        flora2 = getRandomEmoji(FLORA_EMOJI);
+// BART service alerts link -- will be used in future for adding hyperlink
+const serviceAlertLink = "https://www.bart.gov/schedules/advisories";
+// BART rss feed link
+const bartRSSFeed = 'https://www.bart.gov/schedules/advisories/advisories.xml';
+const postCharLimit = 300;
+const newlinesInPost = 2;
+// post database
+// when new headline is here, pull the isodate and compare to 
+// Function to format the latest headline as a post
+// Must include a case for if the post is longer than 300 characters
+function postFormatter(update) {
+    console.log("Running postFormatter...");
+    let verbose_length = update.content.length + update.pubDate.length;
+    let condensed_length = update.contentSnippet.length + update.pubDate.length;
+    // bluesky allows posts 300 characters or less
+    if ((verbose_length + newlinesInPost) <= postCharLimit) {
+        return `${update.content}\n\n${update.pubDate}\n`;
     }
-    // Generate random positions and repetitions for the flora emojis
-    const positions = [0, 1, 2, 3].map(() => Math.floor(Math.random() * 15)).sort((a, b) => a - b);
-    const repetitions = [Math.floor(Math.random() * 3) + 1, Math.floor(Math.random() * 3) + 1];
-    const floraLine = positions.map((position, index) => {
-        const emoji = index < repetitions[0] ? flora1 : flora2;
-        return ' '.repeat(position) + emoji;
-    }).join('');
-    let result = '';
-    emojis.forEach((emoji, index) => {
-        const randomPosition = Math.floor(Math.random() * 15);
-        result += ' '.repeat(randomPosition) + emoji;
-        if (index < emojis.length - 1) {
-            result += '\n';
-        }
-    });
-    result += '\n' + floraLine;
-    console.log(result);
-    postEmojisToBluesky(result);
-    return result;
+    else if ((condensed_length + newlinesInPost) <= postCharLimit) {
+        return `${update.contentSnippet}\n\n${update.pubDate}\n`;
+    }
+    else {
+        return `An alert too long to fit in a Bluesky post is available at ${serviceAlertLink}`;
+    }
 }
-async function postEmojisToBluesky(emojiString) {
+// parse the rss feed once
+async function rssParse(linkToParse) {
+    return await parser.parseURL(linkToParse);
+}
+// Function to print an update from the RSS feed
+// Concern -- how do we make sure it's not identical to the last update?
+// One way -- when pulling in the latest headline, create it as an object and compare to objects in the list
+function rssUpdate() {
+    console.log("Running rssUpdate...");
+    (async () => {
+        let result = await rssParse(bartRSSFeed);
+        let post = postFormatter(result.items[0]);
+        console.log(`post: ${post}`);
+        postAlertToBluesky(post);
+    })();
+}
+async function postAlertToBluesky(postString) {
     const response = await agent.post({
-        text: emojiString
+        text: postString
     });
 }
-printRandomEmojis();
 // Run this on a cron job
-const scheduleExpressionMinute = '* * * * *'; // Run once every minute for testing
-const scheduleExpression = '0 */3 * * *'; // Run once every three hours in prod
-const job = new CronJob(scheduleExpression, printRandomEmojis);
+const scheduleExpressionProd = '*/30 5-23,0 * * *'; // Run once every thirty minutes during opening hours
+const scheduleExpressionTest = '* * * * *'; // Run every minute
+const job = new CronJob(scheduleExpressionProd, rssUpdate);
 job.start();
