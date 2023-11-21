@@ -27,7 +27,20 @@ const rssFeed = process.env.RSS_FEED || "https://www.bart.gov/schedules/advisori
 
 const postCharLimit = 300;
 
-const newlinesInPost = process.env.NEWLINES_IN_POST;
+const newlinesInPost = (_ => {
+  let newlines = process.env.NEWLINES_IN_POST;
+  if (newlines === undefined) {
+    return 0
+  } else {
+    let count = parseInt(newlines)
+    if (Number.isNaN(count)) {
+      console.log("NEWLINES_IN_POST is not a valid number -- defaulting to 0")
+      return 0
+    } else {
+      return count
+    }
+  }
+})()
 
 // post database
 // when new headline is here, pull the isodate and compare to 
@@ -36,16 +49,20 @@ const newlinesInPost = process.env.NEWLINES_IN_POST;
 // Must include a case for if the post is longer than 300 characters
 function postFormatter(update): string {
   console.log("Running postFormatter...");
-  let verbose_length = update.content.length + update.pubDate.length
-  let condensed_length = update.contentSnippet.length + update.pubDate.length
+  let verboseLength = update.content.length + update.pubDate.length
+  let condensedLength = update.contentSnippet.length + update.pubDate.length
 
   // bluesky allows posts 300 characters or less
   // TO-DO: embed service link into the post as a link card
-  if ((verbose_length + newlinesInPost) <= postCharLimit) {
+  console.log(update)
+  if ((verboseLength + newlinesInPost) <= postCharLimit) {
     return `${update.content}\n\n${update.pubDate}`
-  } else if ((condensed_length + newlinesInPost) <= postCharLimit) {
+  } else if ((condensedLength + newlinesInPost) <= postCharLimit) {
     return `${update.contentSnippet}\n\n${update.pubDate}`
   } else {
+    console.log("This could have been an error. Verify:")
+    console.log(`verboseLength: ${verboseLength}`)
+    console.log(`condensedLength: ${condensedLength}`)
     return `An alert too long to fit in a Bluesky post is available at ${serviceAlertLink}`
   }
 }
