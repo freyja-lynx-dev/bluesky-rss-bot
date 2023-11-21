@@ -42,9 +42,9 @@ function postFormatter(update): string {
   // bluesky allows posts 300 characters or less
   // TO-DO: embed service link into the post as a link card
   if ((verbose_length + newlinesInPost) <= postCharLimit) {
-    return `${update.content}\n\n${update.pubDate}\n`
+    return `${update.content}\n\n${update.pubDate}`
   } else if ((condensed_length + newlinesInPost) <= postCharLimit) {
-    return `${update.contentSnippet}\n\n${update.pubDate}\n`
+    return `${update.contentSnippet}\n\n${update.pubDate}`
   } else {
     return `An alert too long to fit in a Bluesky post is available at ${serviceAlertLink}`
   }
