@@ -16,8 +16,9 @@ await agent.login({
     password: process.env.BLUESKY_PASSWORD,
 });
 // BART service alerts link -- will be used in future for adding hyperlink
+// if you're forking this, change to a name more apt for your use case
 const serviceAlertLink = process.env.SOURCE_LINK;
-// BART rss feed link
+// RSS feed link
 // TO-DO: make not having a link be an error
 const rssFeed = process.env.RSS_FEED || "https://www.bart.gov/schedules/advisories/advisories.xml";
 const postCharLimit = 300;
