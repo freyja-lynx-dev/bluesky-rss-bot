@@ -6,6 +6,7 @@ I will add more features later on, such as:
  * Dynamic cron job based on day of week (currently it's hard coded to BART's weekday opening hours)
  * Embedding a link into the post
  * Post deduplication, so it can be more like "post only new updates" rather than "post whatever's on top regularly"
+ * Filesystem config file for controlling post frequency, format, etc
  * More?..
 
 # Installation
