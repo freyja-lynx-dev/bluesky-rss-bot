@@ -16,11 +16,12 @@ await agent.login({
     password: process.env.BLUESKY_PASSWORD,
 });
 // BART service alerts link -- will be used in future for adding hyperlink
-const serviceAlertLink = "https://www.bart.gov/schedules/advisories";
+const serviceAlertLink = process.env.SOURCE_LINK;
 // BART rss feed link
-const bartRSSFeed = 'https://www.bart.gov/schedules/advisories/advisories.xml';
+// TO-DO: make not having a link be an error
+const rssFeed = process.env.RSS_FEED || "https://www.bart.gov/schedules/advisories/advisories.xml";
 const postCharLimit = 300;
-const newlinesInPost = 2;
+const newlinesInPost = process.env.NEWLINES_IN_POST;
 // post database
 // when new headline is here, pull the isodate and compare to 
 // Function to format the latest headline as a post
@@ -30,6 +31,7 @@ function postFormatter(update) {
     let verbose_length = update.content.length + update.pubDate.length;
     let condensed_length = update.contentSnippet.length + update.pubDate.length;
     // bluesky allows posts 300 characters or less
+    // TO-DO: embed service link into the post as a link card
     if ((verbose_length + newlinesInPost) <= postCharLimit) {
         return `${update.content}\n\n${update.pubDate}\n`;
     }
@@ -49,8 +51,9 @@ async function rssParse(linkToParse) {
 // One way -- when pulling in the latest headline, create it as an object and compare to objects in the list
 function rssUpdate() {
     console.log("Running rssUpdate...");
+    // TO-DO: What if the RSS query fails?
     (async () => {
-        let result = await rssParse(bartRSSFeed);
+        let result = await rssParse(rssFeed);
         let post = postFormatter(result.items[0]);
         console.log(`post: ${post}`);
         postAlertToBluesky(post);

@@ -19,13 +19,15 @@ await agent.login({
 });
 
 // BART service alerts link -- will be used in future for adding hyperlink
-const serviceAlertLink = "https://www.bart.gov/schedules/advisories"
-// BART rss feed link
-const bartRSSFeed = 'https://www.bart.gov/schedules/advisories/advisories.xml';
+// if you're forking this, change to a name more apt for your use case
+const serviceAlertLink = process.env.SOURCE_LINK;
+// RSS feed link
+// TO-DO: make not having a link be an error
+const rssFeed = process.env.RSS_FEED || "https://www.bart.gov/schedules/advisories/advisories.xml";
 
-const postCharLimit = 300
+const postCharLimit = 300;
 
-const newlinesInPost = 2
+const newlinesInPost = process.env.NEWLINES_IN_POST;
 
 // post database
 // when new headline is here, pull the isodate and compare to 
@@ -60,7 +62,7 @@ function rssUpdate() {
 
   // TO-DO: What if the RSS query fails?
   (async () => {
-    let result = await rssParse(bartRSSFeed);
+    let result = await rssParse(rssFeed);
     let post = postFormatter(result.items[0]);
 
     console.log(`post: ${post}`);
