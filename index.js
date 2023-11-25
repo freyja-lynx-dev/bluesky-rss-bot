@@ -4,9 +4,24 @@ import * as dotenv from 'dotenv';
 import { CronJob } from 'cron';
 import * as process from 'process';
 import Parser from 'rss-parser';
+import { createClient } from '@supabase/supabase-js';
 dotenv.config();
 const port = process.env.PORT || "8080";
 let parser = new Parser();
+// metafunction for parsing some env entry that may be undefined, and erroring if there is no entry
+// this is for things like database URLs, passwords, etc.
+function parseRequiredEnvWith(envEntry, errorMsg, parsingFunc = String) {
+    if (envEntry === undefined) {
+        throw new Error(errorMsg);
+    }
+    else {
+        return parsingFunc(envEntry);
+    }
+}
+// Create a single supabase client
+const supabaseURL = parseRequiredEnvWith(process.env.SUPABASE_URL, 'Need Supabase URL');
+const supabasePublicKey = parseRequiredEnvWith(process.env.SUPABASE_PUBLIC_KEY, 'Need Supabase Pubkey');
+const supabase = createClient(supabaseURL, supabasePublicKey);
 // Create a Bluesky Agent 
 const agent = new BskyAgent({
     service: 'https://bsky.social',
@@ -20,21 +35,20 @@ await agent.login({
 const serviceAlertLink = process.env.SOURCE_LINK;
 // RSS feed link
 // TO-DO: make not having a link be an error
-const rssFeed = process.env.RSS_FEED || "https://www.bart.gov/schedules/advisories/advisories.xml";
+const rssFeed = parseRequiredEnvWith(process.env.RSS_FEED, 'Need RSS feed link');
 const postCharLimit = 300;
 const newlinesInPost = (_ => {
-    let newlines = process.env.NEWLINES_IN_POST;
-    if (newlines === undefined) {
+    if (process.env.NEWLINES_IN_POST === undefined) {
         return 0;
     }
     else {
-        let count = parseInt(newlines);
+        let count = parseInt(process.env.NEWLINES_IN_POST);
         if (Number.isNaN(count)) {
             console.log("NEWLINES_IN_POST is not a valid number -- defaulting to 0");
             return 0;
         }
         else {
-            return parseInt(newlines);
+            return count;
         }
     }
 })();
