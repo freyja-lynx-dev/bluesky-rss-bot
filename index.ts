@@ -108,14 +108,14 @@ function rssUpdate() {
 
 function prepareAlert(entity: GtfsRealtimeBindings.transit_realtime.IFeedEntity) {
   const alert = entity.alert!
-  const headers = alert.headerText!.translation!;
-  const header = headers.find(trans => trans.language === process.env.LANGUAGE)!;
-  const headerText = header.text;
-  if (!headerText) {
+  const descriptions = alert.descriptionText!.translation!;
+  const description = descriptions.find(trans => trans.language === process.env.LANGUAGE)!;
+  const descriptionText = description.text;
+  if (!descriptionText) {
     throw new Error(`Unexpected data:\n${entity}`, { cause: entity });
   }
   return {
-    text: `${headerText}`,
+    text: `${descriptionText}`,
     id: entity.id,
     alert: alert
   }
@@ -129,14 +129,12 @@ async function alertNotInDatabase(id): Promise<Boolean> {
     .limit(1)
 
   if (error) {
-    // put real error later
-    return false
+    throw error;
   }
   return data.length == 0
 }
 
 async function putAlertInDb(post) {
-  // TO-DO: make not having db name an error
   const { error: insertError } = await supabase
     .from(supabaseTable)
     .insert([{
@@ -144,7 +142,9 @@ async function putAlertInDb(post) {
       id: post.id,
       entity: post.id
     }])
-
+  if (insertError) {
+    throw insertError
+  }
 }
 
 // we can assume any entity that gets here is a well formed entity
@@ -162,10 +162,6 @@ function postGtfsAlert(entity: GtfsRealtimeBindings.transit_realtime.IFeedEntity
       console.log(`Alert ${alert.id} has already been posted`)
     }
   })()
-  // IGNORING THIS WHILE TESTING
-
-  // console.log(entity.id)
-  // console.log(entity.alert?.headerText?.translation)
 }
 
 // main logic for the regular service updates
@@ -217,11 +213,20 @@ async function postAlertToBluesky(postString: string): Promise<void> {
 
 }
 
+async function dropAlerts() {
+  console.log("cleaning the DB")
+  supabase
+    .from(supabaseTable)
+    .delete()
+}
+
 // Run this on a cron job
 const scheduleExpressionProd = '*/2 5-23,0 * * *'; // Run once every 2 minutes during opening hours
+const scheduleTableClean = '0 3 * * *' // Run once every day at 03:00
 const scheduleExpressionTest = '* * * * *'; // Run every minute
 
-const job = new CronJob(scheduleExpressionProd, botUpdate);
-
-job.start();
+const postJob = new CronJob(scheduleExpressionProd, botUpdate);
+const cleanJob = new CronJob(scheduleTableClean, dropAlerts);
+postJob.start();
+cleanJob.start();
 // botUpdate();
