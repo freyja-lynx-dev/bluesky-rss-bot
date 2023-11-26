@@ -5,6 +5,8 @@ import { CronJob } from 'cron';
 import * as process from 'process';
 import Parser from 'rss-parser';
 import { createClient } from '@supabase/supabase-js';
+import fetch from "node-fetch";
+import GtfsRealtimeBindings from "gtfs-realtime-bindings";
 dotenv.config();
 const port = process.env.PORT || "8080";
 let parser = new Parser();
@@ -22,6 +24,7 @@ function parseRequiredEnvWith(envEntry, errorMsg, parsingFunc = String) {
 const supabaseURL = parseRequiredEnvWith(process.env.SUPABASE_URL, 'Need Supabase URL');
 const supabasePublicKey = parseRequiredEnvWith(process.env.SUPABASE_PUBLIC_KEY, 'Need Supabase Pubkey');
 const supabase = createClient(supabaseURL, supabasePublicKey);
+const supabaseTable = parseRequiredEnvWith(process.env.SUPABASE_DB_NAME, 'Need Supabase DB');
 // Create a Bluesky Agent 
 const agent = new BskyAgent({
     service: 'https://bsky.social',
@@ -36,6 +39,7 @@ const serviceAlertLink = process.env.SOURCE_LINK;
 // RSS feed link
 // TO-DO: make not having a link be an error
 const rssFeed = parseRequiredEnvWith(process.env.RSS_FEED, 'Need RSS feed link');
+const gtfsFeed = parseRequiredEnvWith(process.env.ALERTS_URL, 'Need alert feed link');
 const postCharLimit = 300;
 const newlinesInPost = (_ => {
     if (process.env.NEWLINES_IN_POST === undefined) {
@@ -56,7 +60,7 @@ const newlinesInPost = (_ => {
 // when new headline is here, pull the isodate and compare to 
 // Function to format the latest headline as a post
 // Must include a case for if the post is longer than 300 characters
-function postFormatter(update) {
+function rssPostFormatter(update) {
     console.log("Running postFormatter...");
     let verboseLength = update.content.length + update.pubDate.length;
     let condensedLength = update.contentSnippet.length + update.pubDate.length;
@@ -88,10 +92,106 @@ function rssUpdate() {
     // TO-DO: What if the RSS query fails?
     (async () => {
         let result = await rssParse(rssFeed);
-        let post = postFormatter(result.items[0]);
+        let post = rssPostFormatter(result.items[0]);
         console.log(`post: ${post}`);
         postAlertToBluesky(post);
     })();
+}
+function prepareAlert(entity) {
+    const alert = entity.alert;
+    const headers = alert.headerText.translation;
+    const header = headers.find(trans => trans.language === process.env.LANGUAGE);
+    const headerText = header.text;
+    if (!headerText) {
+        throw new Error(`Unexpected data:\n${entity}`, { cause: entity });
+    }
+    return {
+        text: `${headerText}`,
+        id: entity.id,
+        alert: alert
+    };
+}
+async function alertNotInDatabase(id) {
+    const { data, error } = await supabase
+        .from(supabaseTable)
+        .select('*')
+        .eq('id', id)
+        .limit(1);
+    if (error) {
+        // put real error later
+        return false;
+    }
+    return data.length == 0;
+}
+async function putAlertInDb(post) {
+    // TO-DO: make not having db name an error
+    const { error: insertError } = await supabase
+        .from(supabaseTable)
+        .insert([{
+            text: post.text,
+            id: post.id,
+            entity: post.id
+        }]);
+}
+// we can assume any entity that gets here is a well formed entity
+// for safety purposes we will simply ignore any malformed entities and log them
+function postGtfsAlert(entity) {
+    console.log("in postGtfsAlert");
+    const alert = prepareAlert(entity);
+    // check for alert in database
+    (async () => {
+        if (await alertNotInDatabase(alert.id)) {
+            putAlertInDb(alert);
+            // formatGtfsAlert()
+            postAlertToBluesky(alert.text.slice(0, 300)); // slice temporary while testing
+        }
+        else {
+            console.log(`Alert ${alert.id} has already been posted`);
+        }
+    })();
+    // IGNORING THIS WHILE TESTING
+    // console.log(entity.id)
+    // console.log(entity.alert?.headerText?.translation)
+}
+// main logic for the regular service updates
+function botUpdate() {
+    console.log("running update");
+    (async () => {
+        let feed = await getGTFSData(gtfsFeed);
+        if (!feed.entity.length) {
+            console.log("No updates!");
+        }
+        else {
+            console.log("Updates!");
+            try {
+                feed.entity
+                    .filter((entity) => entity.hasOwnProperty('alert'))
+                    .forEach((entity) => postGtfsAlert(entity));
+            }
+            catch (e) { // should probably use better logic for this
+                console.log(e);
+            }
+        }
+        // we should have logic for other types of realtime alerts
+    })();
+}
+// Function to fetch GTFS realtime data
+async function getGTFSData(gtfsUrl) {
+    try {
+        const response = await fetch(gtfsUrl);
+        if (!response.ok) {
+            const error = new Error(`${response.url}: ${response.status} ${response.statusText}`);
+            error.cause = response;
+            throw error;
+        }
+        const buffer = await response.arrayBuffer();
+        const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(new Uint8Array(buffer));
+        return feed;
+    }
+    catch (e) {
+        console.log(e);
+        process.exit(1);
+    }
 }
 async function postAlertToBluesky(postString) {
     const response = await agent.post({
@@ -99,7 +199,8 @@ async function postAlertToBluesky(postString) {
     });
 }
 // Run this on a cron job
-const scheduleExpressionProd = '*/30 5-23,0 * * *'; // Run once every thirty minutes during opening hours
+const scheduleExpressionProd = '*/2 5-23,0 * * *'; // Run once every 2 minutes during opening hours
 const scheduleExpressionTest = '* * * * *'; // Run every minute
-const job = new CronJob(scheduleExpressionProd, rssUpdate);
+const job = new CronJob(scheduleExpressionProd, botUpdate);
 job.start();
+// botUpdate();
