@@ -3,3 +3,9 @@ node_modules/
 
 # environment variable files
 .env
+
+# compiled js files
+*.js
+
+# vscode workspaces
+*.code-workspace
