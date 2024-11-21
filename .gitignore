@@ -6,3 +6,6 @@ node_modules/
 
 # compiled js files
 *.js
+
+# vscode workspaces
+*.code-workspace

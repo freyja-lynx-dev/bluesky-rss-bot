@@ -12,14 +12,13 @@
   "license": "ISC",
   "dependencies": {
     "@atproto/api": "^0.2.7",
-    "@supabase/supabase-js": "^2.38.5",
     "cron": "^2.3.0",
     "dotenv": "^16.0.3",
     "gtfs-realtime-bindings": "^1.1.1",
     "node-cron": "^3.0.2",
     "node-fetch": "^3.3.2",
     "protobufjs": "^7.2.5",
-    "rss-parser": "^3.13.0"
+    "sql.js": "^1.12.0"
   },
   "devDependencies": {
     "@types/node": "^18.15.11",

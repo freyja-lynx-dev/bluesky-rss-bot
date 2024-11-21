@@ -3,14 +3,12 @@ const { BskyAgent } = bsky;
 import * as dotenv from 'dotenv';
 import { CronJob } from 'cron';
 import * as process from 'process';
-import Parser from 'rss-parser';
-import { createClient } from '@supabase/supabase-js';
 import fetch from "node-fetch"
 import GtfsRealtimeBindings from "gtfs-realtime-bindings"
+import initSqlJs from 'sql.js';
 
 dotenv.config();
 const port = process.env.PORT || "8080";
-let parser = new Parser();
 
 // metafunction for parsing some env entry that may be undefined, and erroring if there is no entry
 // this is for things like database URLs, passwords, etc.
@@ -21,12 +19,11 @@ function parseRequiredEnvWith(envEntry: string | undefined, errorMsg: string, pa
     return parsingFunc(envEntry)
   }
 }
-
-// Create a single supabase client
-const supabaseURL = parseRequiredEnvWith(process.env.SUPABASE_URL, 'Need Supabase URL');
-const supabasePublicKey = parseRequiredEnvWith(process.env.SUPABASE_PUBLIC_KEY, 'Need Supabase Pubkey');
-const supabase = createClient(supabaseURL, supabasePublicKey);
-const supabaseTable = parseRequiredEnvWith(process.env.SUPABASE_DB_NAME, 'Need Supabase DB');
+//sql.js
+const SQL = await initSqlJs();
+const db = new SQL.Database();
+let db_init = "CREATE TABLE alerts (alert TEXT, id TEXT);"
+db.run(db_init);
 
 // Create a Bluesky Agent 
 const agent = new BskyAgent({
@@ -85,26 +82,6 @@ function rssPostFormatter(update): string {
     return `An alert too long to fit in a Bluesky post is available at ${serviceAlertLink}`
   }
 }
-// parse the rss feed once
-async function rssParse(linkToParse: string) {
-  return await parser.parseURL(linkToParse);
-}
-
-// Function to print an update from the RSS feed
-// Concern -- how do we make sure it's not identical to the last update?
-// One way -- when pulling in the latest headline, create it as an object and compare to objects in the list
-function rssUpdate() {
-  console.log("Running rssUpdate...");
-
-  // TO-DO: What if the RSS query fails?
-  (async () => {
-    let result = await rssParse(rssFeed);
-    let post = rssPostFormatter(result.items[0]);
-
-    console.log(`post: ${post}`);
-    postAlertToBluesky(post);
-  })()
-}
 
 function prepareAlert(entity: GtfsRealtimeBindings.transit_realtime.IFeedEntity) {
   const alert = entity.alert!
@@ -115,36 +92,22 @@ function prepareAlert(entity: GtfsRealtimeBindings.transit_realtime.IFeedEntity)
     throw new Error(`Unexpected data:\n${entity}`, { cause: entity });
   }
   return {
-    text: `${descriptionText}`,
+    alert: `${descriptionText}`,
     id: entity.id,
-    alert: alert
   }
 }
 
-async function alertNotInDatabase(id): Promise<Boolean> {
-  const { data, error } = await supabase
-    .from(supabaseTable)
-    .select('*')
-    .eq('id', id)
-    .limit(1)
+function alertNotInDatabase(id): Boolean {
+  const find_identical_alert = db.prepare("SELECT * from alerts where id == ?");
+  const result = find_identical_alert.getAsObject([id]);
+  console.log(result);
 
-  if (error) {
-    throw error;
-  }
-  return data.length == 0
+  return result.id != id;
 }
 
-async function putAlertInDb(post) {
-  const { error: insertError } = await supabase
-    .from(supabaseTable)
-    .insert([{
-      text: post.text,
-      id: post.id,
-      entity: post.id
-    }])
-  if (insertError) {
-    throw insertError
-  }
+function putAlertInDb(post) {
+  const putAlertStmt = db.prepare("INSERT INTO alerts VALUES (?, ?)");
+  putAlertStmt.run([post.alert, post.id]);
 }
 
 // we can assume any entity that gets here is a well formed entity
@@ -154,10 +117,10 @@ function postGtfsAlert(entity: GtfsRealtimeBindings.transit_realtime.IFeedEntity
   const alert = prepareAlert(entity);
   // check for alert in database
   (async () => {
-    if (await alertNotInDatabase(alert.id)) {
+    if (alertNotInDatabase(alert.id)) {
       putAlertInDb(alert)
       // formatGtfsAlert()
-      postAlertToBluesky(alert.text.slice(0, 300)); // slice temporary while testing
+      postAlertToBluesky(alert.alert.slice(0, 300)); // slice temporary while testing
     } else {
       console.log(`Alert ${alert.id} has already been posted`)
     }
@@ -214,14 +177,11 @@ async function postAlertToBluesky(postString: string): Promise<void> {
 }
 
 async function dropAlerts() {
-  console.log("cleaning the DB")
-  supabase
-    .from(supabaseTable)
-    .delete()
+  db.run("DELETE FROM alerts")
 }
 
 // Run this on a cron job
-const scheduleExpressionProd = '*/2 5-23,0 * * *'; // Run once every 2 minutes during opening hours
+const scheduleExpressionProd = '*/1 5-23,0 * * *'; // Run once every 2 minutes during opening hours
 const scheduleTableClean = '0 3 * * *' // Run once every day at 03:00
 const scheduleExpressionTest = '* * * * *'; // Run every minute
 
